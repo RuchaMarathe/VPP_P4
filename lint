@@ -1,0 +1,2 @@
+#!/bin/bash
+pylint test_1.py --disable=unused-wildcard-import,invalid-name,no-name-in-module,missing-final-newline,wildcard-import,too-many-locals
