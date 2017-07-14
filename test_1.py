@@ -5,12 +5,13 @@ import Queue
 import threading
 from StringIO import StringIO
 import sys
-#from pprint import pprint
+import argparse
 import subprocess
 import time
 from scapy.all import *
 from scapy.all import TCP, Ether, IP
 from test_lib import RuntimeAPI, test_init
+
 
 
 def sniff_record(queue, port_interface_mapping):
@@ -55,7 +56,7 @@ def split_string(input_packet, expected_packet):
                     " sniffed on port and was suppose to be %s"%(pack_out[i], pack_in[i]))
     return "equal"
 
-def sniffedout_packet_list(expected_packets, sniffed_pack, input_ports):
+def check_exp_outpkt(expected_packets, sniffed_pack, input_ports):
     ''' sniffs packet expected on output '''
     input_list = []
     for j in sniffed_pack:
@@ -132,15 +133,12 @@ def check_equality(p, exp_pkt1):
             # print "P= %s" %(pkt_str(p['packet']))
             # print "P= %s" %(pkt_str(exp_pkt1))
 
-def main():
-    '''main block '''
+def port_intf_mapping(port2intf):
+
     port_interface_mapping = {
-        'port2intf': {0: 'veth2',
-                      1: 'veth4',
-                      2: 'veth6'}
+        'port2intf':port2intf
     }
-    # One time, construct a list of all ethernet interface names, which will be used
-    # by future calls to sniff.
+
     intf_names = []
     for port_num in port_interface_mapping['port2intf']:
         intf_names.append(port_interface_mapping['port2intf'][port_num])
@@ -151,13 +149,28 @@ def main():
     for port_num in port_interface_mapping['port2intf']:
         intf_port_map[port_interface_mapping['port2intf'][port_num]] = port_num
     port_interface_mapping['intf_port_names'] = intf_port_map
+    return port_interface_mapping
+
+def main():
+    '''main block '''
+    # parser = argparse.ArgumentParser(description='Use simple switch to run the test case for P4')
+    # parser.add_argument('jsonfile', type=str, help='compiled P4 programs json file')
+    # args = parser.parse_args()
+    # print args.jsonfile
+
+    # One time, construct a list of all ethernet interface names, which will be used
+    # by future calls to sniff.
+    port_interface_mapping=port_intf_mapping({0: 'veth2',
+                                              1: 'veth4',
+                                              2: 'veth6'})
 
     thriftPort = 9090
     # enter the name of the json file which will be created when we compile the P4 code.
-    jsonfile = "demo1.p4_16.json"
+    jsonfile = 'demo1.p4_16.json'
 
     runswitch = ["simple_switch", "--log-file", "log_file_data", "--log-flush", "--thrift-port",
                  str(thriftPort)] + interfaceArgs(port_interface_mapping) + [jsonfile]
+    print runswitch
     sw = subprocess.Popen(runswitch, cwd="/home/rucha/p4/p4-guide/demo1")
 
     time.sleep(2)
@@ -169,22 +182,28 @@ def main():
     exp_dst_mac = "02:13:57:ab:cd:ef"
     RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
     RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 58")
     RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2")
     RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
 
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80)
 #    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
 #    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
                 IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
     exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
                 IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.32', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
     pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
-                                                          {'port': 1, 'packet': fwd_pkt2}])
+                                                          {'port': 1, 'packet': fwd_pkt2},
+                                                          {'port': 1, 'packet': fwd_pkt3}])
     input_ports = {0, 1}
-    output = sniffedout_packet_list([{'port': 2, 'packet': exp_pkt1},
-                                     {'port': 2, 'packet': exp_pkt2}], pack, input_ports)
+    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+                               {'port': 2, 'packet': exp_pkt2},
+                               {'port': 2, 'packet': exp_pkt3}], pack, input_ports)
     print output
 
 #    # Send packet at layer2, specifying interface
