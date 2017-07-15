@@ -10,7 +10,7 @@ import subprocess
 import time
 from scapy.all import *
 from scapy.all import TCP, Ether, IP
-from test_lib import RuntimeAPI, test_init
+from test_lib import RuntimeAPI, test_init, get_parser
 
 
 
@@ -153,10 +153,11 @@ def port_intf_mapping(port2intf):
 
 def main():
     '''main block '''
-    # parser = argparse.ArgumentParser(description='Use simple switch to run the test case for P4')
-    # parser.add_argument('jsonfile', type=str, help='compiled P4 programs json file')
-    # args = parser.parse_args()
-    # print args.jsonfile
+    parser = get_parser()
+    #parser = argparse.ArgumentParser(description='Use simple switch to run the test case for P4')
+    #parser.add_argument('jsonfile', type=str, help='compiled P4 programs json file')
+    args = parser.parse_args()
+    #print args.json
 
     # One time, construct a list of all ethernet interface names, which will be used
     # by future calls to sniff.
@@ -166,15 +167,16 @@ def main():
 
     thriftPort = 9090
     # enter the name of the json file which will be created when we compile the P4 code.
-    jsonfile = 'demo1.p4_16.json'
+    #jsonfile = 'demo1.p4_16.json'
 
     runswitch = ["simple_switch", "--log-file", "log_file_data", "--log-flush", "--thrift-port",
-                 str(thriftPort)] + interfaceArgs(port_interface_mapping) + [jsonfile]
-    print runswitch
-    sw = subprocess.Popen(runswitch, cwd="/home/rucha/p4/p4-guide/demo1")
+                 str(thriftPort)] + interfaceArgs(port_interface_mapping) + [args.json]
+    #print runswitch
+    sw = subprocess.Popen(runswitch)
 
     time.sleep(2)
-    a = test_init()
+
+    a = test_init(args)
 
     #print (sniff.__doc__)
     #print (sendp.__doc__)

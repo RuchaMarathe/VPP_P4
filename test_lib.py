@@ -2241,18 +2241,20 @@ class RuntimeAPI(cmd.Cmd):
 def load_json_config(standard_client=None, json_path=None):
     load_json_str(utils.get_json_config(standard_client, json_path))
 
-def test_init():
-    args = get_parser().parse_args()
-    x = get_parser()
-    args = x.parse_args()
+def test_init(args):
+    #args = get_parser().parse_args()
+    # x = get_parser()
+    # args = x.parse_args()
+
     standard_client, mc_client = thrift_connect(
         args.thrift_ip, args.thrift_port,
         RuntimeAPI.get_thrift_services(args.pre)
     )
-
+    #print "int thrift"
     load_json_config(standard_client, args.json)
 
     tmp = RuntimeAPI(args.pre, standard_client, mc_client)
+    #print "done runtime"
     return tmp
 
 
