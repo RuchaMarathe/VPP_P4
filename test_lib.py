@@ -2251,7 +2251,7 @@ def test_init(args):
         RuntimeAPI.get_thrift_services(args.pre)
     )
     #print "int thrift"
-    load_json_config(standard_client, args.json)
+    load_json_config(standard_client)
 
     tmp = RuntimeAPI(args.pre, standard_client, mc_client)
     #print "done runtime"
