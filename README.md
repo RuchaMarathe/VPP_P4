@@ -5,7 +5,7 @@ The project aims to implement the features of VPP in P4. Initially the program h
 1. Compares to check if the packet expected and the packet comming out are as expected. Also points out where they differed, if they are 	 different. 
 2. Drops the packets if the forwarding detail is not found among the table entries. 
 3. Checks for the ttl of the packet in the header, and drops the packets with ttl = 1 or 0. 
-4. Also checks for the difference in number of packets expected and the number of packets actually came out and tells the diiference.
+4. Also checks for the difference in number of packets expected and the number of packets actually came out and tells the difference.
 
 The test cases implemented are in python and have the functionality to send and receive packets on different port numbers.
 The sent packet and the received packet are checked to verify if the same packet sent was received. Also the test case is written such that, the number of packets expected and the number of packets that actually came out are compared and accordingly the error is displayed. 
