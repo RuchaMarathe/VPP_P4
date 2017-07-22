@@ -22,7 +22,6 @@ def sniff_record(queue, port_interface_mapping):
 #    ip_src = packet[0].summary()
 #    print ip_src
     print "sniff stop returned %d packet" %(len(pkt))
-
     #global pack
     #pack = packet
     queue.put(pkt)
@@ -42,93 +41,82 @@ def byte_to_hex(byteStr):
 def split_string(input_packet, expected_packet):
     '''splits the string and compares the expected and output pkt to find the difference. '''
     pack_in_len = len(input_packet)
-    #print pack_in_len
-    #print pack_in_len
-    #print type(pack_in_len)
     pack_out_len = len(expected_packet)
-    #print pack_out_len
     if pack_in_len != pack_out_len:
-        return "Not same - packet lengths different"
+        return "FAILED: Not same - packet lengths different"
     pack_in = input_packet.split()
     pack_out = expected_packet.split()
     list_len = len(pack_in)
     for i in range(list_len):
         if pack_in[i] != pack_out[i]:
-            return ("Expected packet was different at %s, compared to the packet"
+            return ("FAILED: Expected packet was different at %s, compared to the packet"
                     " sniffed on port and was suppose to be %s"%(pack_out[i], pack_in[i]))
     return "equal"
 
 def check_exp_outpkt(expected_packets, sniffed_pack, input_ports):
     ''' sniffs packet expected on output '''
     input_list = []
+    #print "sniffed pack list len: %d" %(len(sniffed_pack))
     for j in sniffed_pack:
         num = j['port']
-        ttl_check = j['packet'][IP].ttl
-        # print ttl_new
-        # print type(ttl_new)
-        #if num in input_ports:
+        #print num
+        #ttl_check = j['packet'][IP].ttl
         if num in input_ports:
-            if (ttl_check == 1):
-                continue
+            continue
         else:
             input_list.append(j)
 
     sniffin_len = len(input_list)
-    #print sniffin_len
+    #print "sniffed output list: %d" %(sniffin_len)
     expected_len = len(expected_packets)
-    #print expected_len
     if(sniffin_len < expected_len):
         range_len = sniffin_len
     else:
         range_len = expected_len
     #print list_len
     for i in range(range_len):
-        #list1=str(input_list[i])
-        #list2=str(expected_packets[i])
         input_packet = byte_to_hex(str(input_list[i]['packet']))
-        #print input_packet
         expected_packet = byte_to_hex(str(expected_packets[i]['packet']))
 
         #print expected_packet
-        result = split_string(input_packet, expected_packet)
-        if result == "equal":
-            #print "packet as expected"
-            continue
+        exp_port = expected_packets[i]['port']
+        in_port = input_list[i]['port']
+        if(exp_port == in_port):
+            result = split_string(input_packet, expected_packet)
+            if result == "equal":
+                #print "packet as expected"
+                continue
+            else:
+                return result
         else:
-            return result
+            return "FAILED: Packet expected on a different port."
     if(sniffin_len == expected_len):
         return "All packets as expected"
     else:
-        return "Expected %d packets, but the packets sniffed out are %d"%(expected_len, sniffin_len)
+        return "FAILED: Expected %d packets, but the packets sniffed out are %d"%(expected_len, sniffin_len)
 
-        # diff_string=split_string(input_packet, expected_packet)
-        # if input_packet==expected_packet:
-        #     print "same"
-        # else:
-        #     #print input_list[0]['packet'].__repr__()
-        #     #print expected_packets[0]['packet'].__repr__()
-        #     print "not same"
-    #return input_list
 
 def send_pkts_and_capture(port_interface_mapping, port_packet_list):
     ''' sends packets to P4 and captures by sniffing '''
     queue = Queue.Queue()
+    #print len(port_packet_list)
     thd = threading.Thread(name="sniff_thread",
                            target=lambda: sniff_record(queue, port_interface_mapping))
     thd.start()
+    #time.sleep(1)
     for x in port_packet_list:
         port_num = x['port']
         iface_name = port_interface_mapping['port2intf'][port_num]
         sendp(x['packet'], iface=iface_name)
     thd.join()
     pack = queue.get()
+    #print "input packet list length: %d" %(len(pack))
     Packet_list = []
     for p in pack:
-        #ttl_new = pack[IP].ttl
-        #print ttl_new
         eth = p.sniffed_on
         port_no = port_interface_mapping['intf_port_names'][eth]
         Packet_list.append({'port': port_no, 'packet': p})
+    #print "all sniffed packets:%d" %(len(Packet_list))
     return Packet_list
 
 def interfaceArgs(port_interface_mapping):
@@ -148,9 +136,6 @@ def check_equality(p, exp_pkt1):
       #  return "equal"
     else:
         return "not equal"
-            # The below lines print out the details of the packets
-            # print "P= %s" %(pkt_str(p['packet']))
-            # print "P= %s" %(pkt_str(exp_pkt1))
 
 def port_intf_mapping(port2intf):
 
@@ -170,23 +155,62 @@ def port_intf_mapping(port2intf):
     port_interface_mapping['intf_port_names'] = intf_port_map
     return port_interface_mapping
 
+def test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping):
+    fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
+    fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80)
+#    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
+#    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.32', ttl=fwd_pkt3[IP].ttl-1) / TCP(sport=5793, dport=80))
+    pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
+                                                          {'port': 1, 'packet': fwd_pkt2},
+                                                          {'port': 1, 'packet': fwd_pkt3}])
+    input_ports = {0, 1}
+    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+                               {'port': 2, 'packet': exp_pkt2},
+                               {'port': 3, 'packet': exp_pkt3}], pack, input_ports)
+    return output
+
+def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping):
+    #  Program test cases to check for ttl values- signed and unsigned
+
+    fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
+    fwd_pkt2 = Ether() / IP(dst='10.1.0.34', ttl =1) / TCP(sport=5793, dport=80)
+    fwd_pkt3 = Ether() / IP(dst='10.1.0.32', ttl=0) / TCP(sport=5793, dport=80)
+#    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
+#    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
+
+    pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
+                                                          {'port': 1, 'packet': fwd_pkt2},
+                                                          {'port': 1, 'packet': fwd_pkt3}])
+    input_ports = {0, 1}
+    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1}], pack, input_ports)
+    #output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},{'port': 2, 'packet': exp_pkt2}], pack, input_ports)
+    return output
+
 def main():
     '''main block '''
     parser = get_parser()
-    #parser = argparse.ArgumentParser(description='Use simple switch to run the test case for P4')
-    #parser.add_argument('jsonfile', type=str, help='compiled P4 programs json file')
     args = parser.parse_args()
-    #print args.json
-
     # One time, construct a list of all ethernet interface names, which will be used
     # by future calls to sniff.
     port_interface_mapping=port_intf_mapping({0: 'veth2',
                                               1: 'veth4',
-                                              2: 'veth6'})
+                                              2: 'veth6',
+                                              3: 'veth8'})
 
     thriftPort = 9090
     # enter the name of the json file which will be created when we compile the P4 code.
-    #jsonfile = 'demo1.p4_16.json'
+
+    subprocess.call(["killall", "simple_switch"])
+    os.remove("log_file_data.txt")
 
     runswitch = ["simple_switch", "--log-file", "log_file_data", "--log-flush", "--thrift-port",
                  str(thriftPort)] + interfaceArgs(port_interface_mapping) + [args.json]
@@ -196,127 +220,20 @@ def main():
     time.sleep(2)
 
     a = test_init(args)
-
-    #print (sniff.__doc__)
-    #print (sendp.__doc__)
     exp_src_mac = "00:11:22:33:44:55"
     exp_dst_mac = "02:13:57:ab:cd:ef"
     RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
     RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
-    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
     RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3")
     RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
 
-#     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
-#     fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
-#     fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80)
-# #    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
-# #    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
-#     exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-#                 IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
-#     exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-#                 IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
-#     exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-#                 IP(dst='10.1.0.32', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
-#     pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
-#                                                           {'port': 1, 'packet': fwd_pkt2},
-#                                                           {'port': 1, 'packet': fwd_pkt3}])
-#     input_ports = {0, 1}
-#     output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
-#                                {'port': 2, 'packet': exp_pkt2},
-#                                {'port': 2, 'packet': exp_pkt3}], pack, input_ports)
-#     print output
+    output = test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping)
 
-#  Program test cases to check for ttl values- signed and unsigned
-
-    fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
-    fwd_pkt2 = Ether() / IP(dst='10.1.0.34', ttl =6) / TCP(sport=5793, dport=80)
-    fwd_pkt3 = Ether() / IP(dst='10.1.0.32', ttl=234) / TCP(sport=5793, dport=80)
-#    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
-#    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
-    exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-                IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
-    exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-                IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
-    exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-                IP(dst='10.1.0.32', ttl=233) / TCP(sport=5793, dport=80))
-    pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
-                                                          {'port': 1, 'packet': fwd_pkt2},
-                                                          {'port': 1, 'packet': fwd_pkt3}])
-    input_ports = {0, 1}
-    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
-                               {'port': 2, 'packet': exp_pkt2},
-                               {'port': 2, 'packet': exp_pkt3}], pack, input_ports)
-    #output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},{'port': 2, 'packet': exp_pkt2}], pack, input_ports)
+    #output = test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping)
     print output
 
-#    # Send packet at layer2, specifying interface
-
-    # for p in out_pack:
-    #     print out_pack[0]['packet'].__repr__()
-
-    # for p in pack:
-    #     #print p
-    #     #print pack[0]['packet'][IP].ttl
-    #     eth = p['port']
-        #print eth
-        # if eth == 0:
-        #     continue
-        #print "type of packet %s" %(type(p))
-        #print eth
-        #packa = p['packet'].__repr__()
-        #print pack
-        #--------------------------------------------------------------
-        # equality = split_pack(packa, eth)
-        # print equality
-        # if (equality == "same"):
-        #     print "packets are: %s" %(equality)
-        #     print "veth is %d" %(eth)
-        # else:
-        #     print "still comparing"
-        #--------------------------------------------------------------
-        #print type(dst_Add)
-        #print pack[0]['packet'].__repr__()
-        #print out_pack[0]['packet']
-
-        #if pack[0]['packet']==out_pack[0]['packet']:
-        #print "Packet was sniffed on %d and was %s at %f" %(eth,
-        # p['packet'].__repr__(), p['packet'].time)
-
-        # src_mac = p[Ether].src
-        # print src_mac
-        # if(exp_src_mac == src_mac):
-        #     print "src and dst mac address match"
-        # else :
-        #     print "not a  match"
-        #result = check_equality(p, exp_pkt1)
-        #print result
-        #print "Packet not sniffed and was %s at %f" %( exp_pkt1.__repr__(), exp_pkt1.time)
-        #print "Packet was sniffed on %d and was %s at %f" %(eth,
-        #p['packet'].__repr__(), p['packet'].time)
-        # if pkt_str(p['packet']) == pkt_str(exp_pkt1):
-        #     print "equal"
-        # elif pkt_str(p['packet']) == pkt_str(exp_pkt2)
-        #     print "equal"
-        # else :
-        #     print "not equal"
-        #     print "Packet not sniffed and was %s at %f" %( exp_pkt1.__repr__(), exp_pkt1.time)
-            # print "P= %s" %(pkt_str(p['packet']))
-            # print "P= %s" %(pkt_str(exp_pkt1))
-#        print type(p[Ether].src)
-    #     if eth == 'veth2':
-    #         veth2=p.summary()
-    #         print veth2
-    #     else:
-    #         veth6=p.summary()
-    #         print veth6
-    # if veth2==veth6 :
-    #     print "Same packet received"
-#        p[0].show()
-#        print pack1
-#        pack2 = p[1].summary()
-        #print pack2
-    #print "Packet was sniffed on %s and was %s at %f" %(p.sniffed_on, p.__repr__(), p.time)
     sw.kill()
 
 
