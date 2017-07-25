@@ -41,7 +41,7 @@ header ipv4_t {
 struct fwd_metadata_t {
     bit<32> l2ptr;
     bit<24> out_bd;
-   // bit<14> mtu;
+    bit<14> mtu;
 }
 
 struct metadata {
@@ -107,11 +107,12 @@ control ingress(inout headers hdr,
         default_action = my_drop;
     }
 
-    action set_bd_dmac_intf(bit<24> bd, bit<48> dmac, bit<9> intf) {
+    action set_bd_dmac_intf(bit<24> bd, bit<48> dmac, bit<9> intf, bit<14> mtu) {
         meta.fwd_metadata.out_bd = bd;
         hdr.ethernet.dstAddr = dmac;
         standard_metadata.egress_spec = intf;
-        //meta.fwd_metadata.mtu = mtu;
+        meta.fwd_metadata.mtu = mtu;
+        //standard_metadata.packet_length = pkt_len;
     }
     table mac_da {
         key = {
@@ -122,6 +123,19 @@ control ingress(inout headers hdr,
             my_drop;
         }
         default_action = my_drop;
+    }
+    action noAction(){
+
+    }
+    table debug_tab {
+        key = {
+            standard_metadata.packet_length: exact;
+            //meta.fwd_metadata.mtu: exact;
+        }
+        actions = {
+            noAction;
+        }
+        default_action = noAction();
     }
 
     apply {
@@ -135,12 +149,13 @@ control ingress(inout headers hdr,
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
         ipv4_da_lpm.apply();
         mac_da.apply();
-        /*if((bit<14>)standard_metadata.packet_length > meta.fwd_metadata.mtu)
+        debug_tab.apply();
+        if((bit<14>)standard_metadata.packet_length > meta.fwd_metadata.mtu)
         {
             // for now dropping the packet. To do later: create a special header which will send an ICMP message back.
             my_drop();
             return;
-        }*/
+        }
     }
 }
 
