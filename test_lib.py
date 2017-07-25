@@ -939,7 +939,7 @@ class RuntimeAPI(cmd.Cmd):
     def complete_table_clear(self, text, line, start_index, end_index):
         return self._complete_tables(text)
 
-    @handle_bad_input
+    #@handle_bad_input
     def do_table_add(self, line):
         "Add entry to a match table: table_add <table name> <action name> <match fields> => <action parameters> [priority]"
         args = line.split()
@@ -1549,6 +1549,7 @@ class RuntimeAPI(cmd.Cmd):
             print "Creating node with rid", rid, ", port map", port_map_str, "and lag map", lag_map_str
             l1_hdl = self.mc_client.bm_mc_node_create(0, rid, port_map_str, lag_map_str)
         print "node was created with handle", l1_hdl
+        return l1_hdl
 
     def get_node_handle(self, s):
         try:
