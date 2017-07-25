@@ -155,10 +155,18 @@ def port_intf_mapping(port2intf):
     port_interface_mapping['intf_port_names'] = intf_port_map
     return port_interface_mapping
 
-def test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping):
+def test_mtu_regular(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str):
+
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2"+" 57")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3"+" 9000")
+    RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
+
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
-    fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80)
+    fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80) / Raw(create_str)
 #    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
 #    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
@@ -166,7 +174,7 @@ def test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping):
     exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
                 IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
     exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
-                IP(dst='10.1.0.32', ttl=fwd_pkt3[IP].ttl-1) / TCP(sport=5793, dport=80))
+                IP(dst='10.1.0.32', ttl=fwd_pkt3[IP].ttl-1) / TCP(sport=5793, dport=80) / Raw(create_str))
     pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
                                                           {'port': 1, 'packet': fwd_pkt2},
                                                           {'port': 1, 'packet': fwd_pkt3}])
@@ -176,12 +184,48 @@ def test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping):
                                {'port': 3, 'packet': exp_pkt3}], pack, input_ports)
     return output
 
-def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping):
+def test_mtu_failing(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str):
+
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2"+" 1514")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3"+" 9000")
+    RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
+
+    fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
+    fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80) / Raw(create_str)
+#    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
+#    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
+    exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt2 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.34', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt3 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
+                IP(dst='10.1.0.32', ttl=fwd_pkt3[IP].ttl-1) / TCP(sport=5793, dport=80) / Raw(create_str))
+    pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
+                                                          {'port': 1, 'packet': fwd_pkt2},
+                                                          {'port': 1, 'packet': fwd_pkt3}])
+    input_ports = {0, 1}
+    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+                               {'port': 2, 'packet': exp_pkt2},
+                               {'port': 3, 'packet': exp_pkt3}], pack, input_ports)
+    return output
+
+def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a):
     #  Program test cases to check for ttl values- signed and unsigned
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
+    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2"+" 56")
+    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3"+" 9000")
+    RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
 
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34', ttl =1) / TCP(sport=5793, dport=80)
     fwd_pkt3 = Ether() / IP(dst='10.1.0.32', ttl=0) / TCP(sport=5793, dport=80)
+    print len(IP(dst='10.1.0.1') / TCP(sport=5793, dport=80))
 #    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
 #    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
@@ -222,16 +266,21 @@ def main():
     a = test_init(args)
     exp_src_mac = "00:11:22:33:44:55"
     exp_dst_mac = "02:13:57:ab:cd:ef"
-    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
-    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
-    RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
-    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2")
-    RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3")
-    RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
+    n = 8000
+    #create_str = "".join(choice(lowercase) for i in range(n))
+    create_str = "a" * n
+    #print create_str
+    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
+    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
+    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
+    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2"+" 56")
+    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 9 "+exp_dst_mac+" 3"+" 9000")
+    # RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
 
-    output = test_regular(exp_src_mac, exp_dst_mac, port_interface_mapping)
-
-    #output = test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping)
+    #output = test_mtu_regular(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str)
+    output = test_mtu_failing(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str)
+    #print "table entries: %s" %(output1) 
+    #output = test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a)
     print output
 
     sw.kill()
