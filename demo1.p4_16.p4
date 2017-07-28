@@ -42,6 +42,7 @@ struct fwd_metadata_t {
     bit<32> l2ptr;
     bit<24> out_bd;
     bit<14> mtu;
+    bit<9> rid;
 }
 
 struct metadata {
@@ -107,12 +108,45 @@ control ingress(inout headers hdr,
         default_action = my_drop;
     }
 
-    action set_bd_dmac_intf(bit<24> bd, bit<48> dmac, bit<9> intf, bit<14> mtu) {
+    // multicast group match action tables
+
+    action set_mc_group(bit<16> mcgp) 
+    {
+        standard_metadata.mcast_grp = mcgp;
+    }
+    action noAction(){
+
+    }
+    table mcgp_sa_da_lookup 
+    {
+        key = {
+            hdr.ipv4.srcAddr: exact;
+            hdr.ipv4.dstAddr: exact;
+        }
+        actions = {
+            set_mc_group;
+            noAction;
+        }
+        default_action = noAction();
+    }
+
+    table mcgp_da_lookup 
+    {
+        key = {
+            hdr.ipv4.dstAddr: exact;
+        }
+        actions = {
+            set_mc_group;
+            noAction;
+        }
+        default_action = noAction();
+    }
+
+    action set_bd_dmac_intf(bit<24> bd, bit<48> dmac, bit<9> intf) {
         meta.fwd_metadata.out_bd = bd;
         hdr.ethernet.dstAddr = dmac;
         standard_metadata.egress_spec = intf;
-        meta.fwd_metadata.mtu = mtu;
-        //standard_metadata.packet_length = pkt_len;
+        //meta.fwd_metadata.mtu = mtu;
     }
     table mac_da {
         key = {
@@ -124,9 +158,7 @@ control ingress(inout headers hdr,
         }
         default_action = my_drop;
     }
-    action noAction(){
 
-    }
     table debug_tab {
         key = {
             standard_metadata.packet_length: exact;
@@ -138,23 +170,25 @@ control ingress(inout headers hdr,
         default_action = noAction();
     }
 
-    apply {
+    apply
+    {
         if (hdr.ipv4.ttl == 1 || hdr.ipv4.ttl == 0)
         {
     // for now dropping the packet. To do later: create a special header which will send an ICMP message back.
             my_drop();
             return;
         }
-
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
-        ipv4_da_lpm.apply();
-        mac_da.apply();
-        debug_tab.apply();
-        if((bit<14>)standard_metadata.packet_length > meta.fwd_metadata.mtu)
+        if(hdr.ipv4.dstAddr[31:28] == 0xE)
         {
-            // for now dropping the packet. To do later: create a special header which will send an ICMP message back.
-            my_drop();
-            return;
+            mcgp_sa_da_lookup.apply();
+            mcgp_da_lookup.apply();
+        }
+        else
+        {
+            ipv4_da_lpm.apply();
+            mac_da.apply();
+            debug_tab.apply();
         }
     }
 }
@@ -163,6 +197,36 @@ control egress(inout headers hdr,
                inout metadata meta,
                inout standard_metadata_t standard_metadata)
 {
+    action assign_mtu(bit<14> mtu) {
+        meta.fwd_metadata.mtu = mtu;
+    }
+    table mtu_check {
+        key = {
+            //standard_metadata.egress_port: exact;
+            meta.fwd_metadata.out_bd: exact;
+        }
+        actions = {
+            assign_mtu;
+            my_drop;
+        }
+        default_action = my_drop;
+    }
+
+    action out_bd_port_match(bit<24> bd) {
+        meta.fwd_metadata.out_bd = bd;
+    }
+    table port_bd_rid {
+        key = {
+            standard_metadata.egress_port: exact;
+            standard_metadata.egress_rid: exact;
+        }
+        actions = {
+            out_bd_port_match;
+            my_drop;
+        }
+        default_action = my_drop;
+    }
+
     action rewrite_mac(bit<48> smac) {
         hdr.ethernet.srcAddr = smac;
     }
@@ -177,7 +241,20 @@ control egress(inout headers hdr,
         default_action = my_drop;
     }
 
-    apply {
+    apply
+    {
+        if(hdr.ipv4.dstAddr[31:28] == 0xE)
+        {
+            port_bd_rid.apply();
+        }
+        mtu_check.apply();
+        if((bit<14>)standard_metadata.packet_length > meta.fwd_metadata.mtu)
+        {
+            // for now dropping the packet. To do later: create a special header which will send an ICMP message back.
+            my_drop();
+            return;
+        } 
+        //port_bd_rid.apply();
         send_frame.apply();
     }
 }
