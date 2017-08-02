@@ -289,8 +289,8 @@ def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a):
 
 def table_entries_multicast(a, exp_src_mac):
 
-    RuntimeAPI.do_table_add(a, "mcgp_sa_da_lookup set_mc_group 10.1.0.3 224.1.0.1 => 2")
-    RuntimeAPI.do_table_add(a, "mcgp_da_lookup set_mc_group 224.1.0.1 => 3")
+    RuntimeAPI.do_table_add(a, "mcgp_sa_da_lookup set_mc_group 10.1.0.3 224.1.0.1 => 2 0")
+    RuntimeAPI.do_table_add(a, "mcgp_da_lookup set_mc_group 224.1.0.1 => 3 1")
 
     RuntimeAPI.do_mc_mgrp_create(a, "2")
     RuntimeAPI.do_mc_mgrp_create(a, "3")
