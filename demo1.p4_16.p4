@@ -43,6 +43,7 @@ struct fwd_metadata_t {
     bit<24> out_bd;
     bit<14> mtu;
     bit<9> rid;
+    bit<9> rpf_intf;
 }
 
 struct metadata {
@@ -110,9 +111,11 @@ control ingress(inout headers hdr,
 
     // multicast group match action tables
 
-    action set_mc_group(bit<16> mcgp) 
+    action set_mc_group(bit<16> mcgp, bit<9> rpf) 
     {
         standard_metadata.mcast_grp = mcgp;
+        // Reverse path forwading check for multiast case
+        meta.fwd_metadata.rpf_intf = rpf;
     }
     action noAction(){
 
@@ -122,6 +125,7 @@ control ingress(inout headers hdr,
         key = {
             hdr.ipv4.srcAddr: exact;
             hdr.ipv4.dstAddr: exact;
+
         }
         actions = {
             set_mc_group;
@@ -185,8 +189,11 @@ control ingress(inout headers hdr,
             {
                 mcgp_da_lookup.apply();
             }
-            //mcgp_sa_da_lookup.apply();
-            //mcgp_da_lookup.apply();
+            if(standard_metadata.ingress_port != meta.fwd_metadata.rpf_intf)
+            {
+                my_drop();
+                return;
+            }
         }
         else
         {
