@@ -181,8 +181,12 @@ control ingress(inout headers hdr,
         hdr.ipv4.ttl = hdr.ipv4.ttl - 1;
         if(hdr.ipv4.dstAddr[31:28] == 0xE)
         {
-            mcgp_sa_da_lookup.apply();
-            mcgp_da_lookup.apply();
+            if(!mcgp_sa_da_lookup.apply().hit)
+            {
+                mcgp_da_lookup.apply();
+            }
+            //mcgp_sa_da_lookup.apply();
+            //mcgp_da_lookup.apply();
         }
         else
         {
