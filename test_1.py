@@ -77,6 +77,7 @@ def check_exp_outpkt(expected_packets, sniffed_pack, input_ports):
             input_list.append(j)
 
     sniffin_len = len(input_list)
+    print type(input_list)
     #print "sniffed output list: %d" %(sniffin_len)
     expected_len = len(expected_packets)
     if(sniffin_len < expected_len):
@@ -107,6 +108,71 @@ def check_exp_outpkt(expected_packets, sniffed_pack, input_ports):
         return "All packets as expected"
     else:
         return "FAILED: Expected %d packets, but the packets sniffed out on output ports are %d"%(expected_len, sniffin_len)
+
+def packets_by_port(packet_list_exp_snif, input_ports):
+
+    sniffed_pkts_by_port = {}
+    for j in packet_list_exp_snif:
+        num = j['port']
+        if num in input_ports:
+            continue
+        else:
+            if num in sniffed_pkts_by_port:
+                sniffed_pkts_by_port[num].append(j)
+            else:
+                sniffed_pkts_by_port[num] = [j]
+
+    return sniffed_pkts_by_port
+
+
+
+def create_port_seq_list(expected_packets, sniffed_pack, input_ports):
+    ''' sniffs packet expected on output '''
+    expected_dict = packets_by_port(expected_packets, input_ports)
+    sniffed_dict = packets_by_port(sniffed_pack, input_ports)
+    for port in expected_dict:
+        if (port not in sniffed_dict):
+            sniffed_dict[port] = []
+
+    for port in sniffed_dict:
+        if (port not in expected_dict):
+            expected_dict[port] = []
+
+    for port_num in expected_dict:
+
+        input_list = sniffed_dict[port_num]
+        expected_packets = expected_dict[port_num]
+        sniffin_len = len(input_list)
+    #print "sniffed output list: %d" %(sniffin_len)
+        expected_len = len(expected_packets)
+        if(sniffin_len < expected_len):
+            range_len = sniffin_len
+        #print sniffin_len
+        else:
+            range_len = expected_len
+    #print list_len
+        for i in range(range_len):
+            input_packet = byte_to_hex(str(input_list[i]['packet']))
+            expected_packet = byte_to_hex(str(expected_packets[i]['packet']))
+
+        #print expected_packet
+            exp_port = expected_packets[i]['port']
+            in_port = input_list[i]['port']
+            if(exp_port == in_port):
+                result = split_string(input_packet, expected_packet)
+                if result == "equal":
+                #print "packet as expected"
+                    continue
+                else:
+                    return result
+            else:
+                print ("Input port: %d" %(in_port))
+                print ("Expected port: %d"%(exp_port))
+
+                return "FAILED: Packet expected on a different port."
+        if(sniffin_len != expected_len):
+            return "FAILED: Expected %d packets, but the packets sniffed out on output ports are %d"%(expected_len, sniffin_len)
+    return "All packets as expected"
 
 
 def send_pkts_and_capture(port_interface_mapping, port_packet_list):
@@ -184,8 +250,6 @@ def table_entries_unicast(a, exp_src_mac, exp_dst_mac):
 
 def test_mtu_regular(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str):
 
-    
-
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80) / Raw(create_str)
@@ -201,23 +265,13 @@ def test_mtu_regular(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create
                                                           {'port': 1, 'packet': fwd_pkt2},
                                                           {'port': 1, 'packet': fwd_pkt3}])
     input_ports = {0, 1}
-    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+    output = create_port_seq_list([{'port': 2, 'packet': exp_pkt1},
                                {'port': 2, 'packet': exp_pkt2},
                                {'port': 3, 'packet': exp_pkt3}], pack, input_ports)
     return output
 
 def test_mtu_failing(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create_str):
 
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
-    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2")
-    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 7 "+exp_dst_mac+" 3")
-    # RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
-    # RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 7 => "+exp_src_mac)
-    # RuntimeAPI.do_table_add(a, "mtu_check assign_mtu 9 => 400")
-    # RuntimeAPI.do_table_add(a, "mtu_check assign_mtu 7 => 400")
-
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     fwd_pkt3 = Ether() / IP(dst='10.1.0.32') / TCP(sport=5793, dport=80) / Raw(create_str)
@@ -233,28 +287,16 @@ def test_mtu_failing(exp_src_mac, exp_dst_mac, port_interface_mapping, a, create
                                                           {'port': 1, 'packet': fwd_pkt2},
                                                           {'port': 1, 'packet': fwd_pkt3}])
     input_ports = {0, 1}
-    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+    output = create_port_seq_list([{'port': 2, 'packet': exp_pkt1},
                                {'port': 2, 'packet': exp_pkt2},
                                {'port': 3, 'packet': exp_pkt3}], pack, input_ports)
     return output
 
 def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a):
-    #  Program test cases to check for ttl values- signed and unsigned
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.1/32 => 58")
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.34/32 => 58")
-    # RuntimeAPI.do_table_add(a, "ipv4_da_lpm set_l2ptr 10.1.0.32/32 => 45")
-    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 58 => 9 "+exp_dst_mac+" 2")
-    # RuntimeAPI.do_table_add(a, "mac_da set_bd_dmac_intf 45 => 7 "+exp_dst_mac+" 3")
-    # RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 9 => "+exp_src_mac)
-    # RuntimeAPI.do_table_add(a, "send_frame rewrite_mac 7 => "+exp_src_mac)
-    # RuntimeAPI.do_table_add(a, "mtu_check assign_mtu 9 => 400")
-    # RuntimeAPI.do_table_add(a, "mtu_check assign_mtu 7 => 400")
-    
 
     fwd_pkt1 = Ether() / IP(dst='10.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='10.1.0.34', ttl =1) / TCP(sport=5793, dport=80)
     fwd_pkt3 = Ether() / IP(dst='10.1.0.32', ttl=0) / TCP(sport=5793, dport=80)
-    print len(IP(dst='10.1.0.1') / TCP(sport=5793, dport=80))
 #    fwd_pkt1=Ether() / IPv6(dst='127::1') / TCP(sport=5793, dport=80)
 #    drop_pkt1=Ether() / IP(dst='10.1.0.34') / TCP(sport=5793, dport=80)
     exp_pkt1 = (Ether(src=exp_src_mac, dst=exp_dst_mac) /
@@ -264,7 +306,7 @@ def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a):
                                                           {'port': 1, 'packet': fwd_pkt2},
                                                           {'port': 1, 'packet': fwd_pkt3}])
     input_ports = {0, 1}
-    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1}], pack, input_ports)
+    output = create_port_seq_list([{'port': 2, 'packet': exp_pkt1}], pack, input_ports)
     #output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},{'port': 2, 'packet': exp_pkt2}], pack, input_ports)
     return output
 
@@ -304,7 +346,6 @@ def table_entries_multicast(a, exp_src_mac):
 
 def test_multicast(a, port_interface_mapping, exp_src_mac, exp_dst_mac):
 
-
     fwd_pkt1 = Ether() / IP(dst='224.1.0.1') / TCP(sport=5793, dport=80)
     fwd_pkt2 = Ether() / IP(dst='224.1.0.34') / TCP(sport=5793, dport=80)
 
@@ -316,7 +357,7 @@ def test_multicast(a, port_interface_mapping, exp_src_mac, exp_dst_mac):
     pack = send_pkts_and_capture(port_interface_mapping, [{'port': 0, 'packet': fwd_pkt1},
                                                           {'port': 1, 'packet': fwd_pkt2}])
     input_ports = {0, 1}
-    output = check_exp_outpkt([{'port': 2, 'packet': exp_pkt1},
+    output = create_port_seq_list([{'port': 2, 'packet': exp_pkt1},
                                {'port': 3, 'packet': exp_pkt1},
                                {'port': 4, 'packet': exp_pkt2},
                                {'port': 5, 'packet': exp_pkt2},
