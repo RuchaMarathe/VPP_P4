@@ -289,8 +289,11 @@ def test_ttl_cases(exp_src_mac, exp_dst_mac, port_interface_mapping, a):
 
 def table_entries_multicast(a, exp_src_mac):
 
-    RuntimeAPI.do_table_add(a, "mcgp_sa_da_lookup set_mc_group 10.1.0.3 224.1.0.1 => 2 0")
-    RuntimeAPI.do_table_add(a, "mcgp_da_lookup set_mc_group 224.1.0.1 => 3 1")
+    RuntimeAPI.do_table_add(a, "mcgp_sa_da_lookup set_mc_group 10.1.0.3 224.1.0.1 => 2 0 0 1")
+    RuntimeAPI.do_table_add(a, "mcgp_da_lookup set_mc_group 224.1.0.1 => 3 1 0 2")
+
+    RuntimeAPI.do_table_add(a, "mcgp_bidirect set_bdir_map 0 1 => 1")
+    RuntimeAPI.do_table_add(a, "mcgp_bidirect set_bdir_map 1 2 => 1")
 
     RuntimeAPI.do_mc_mgrp_create(a, "2")
     RuntimeAPI.do_mc_mgrp_create(a, "3")
@@ -342,6 +345,23 @@ def test_multicast_sa_da(a, port_interface_mapping, exp_src_mac, exp_dst_mac):
                                {'port': 6, 'packet': exp_pkt2}], pack, input_ports)
     return output
 
+def test_multicast_rpf(a, port_interface_mapping, exp_src_mac, exp_dst_mac):
+
+    fwd_pkt1 = Ether() / IP(src='10.1.0.3', dst='224.1.0.1') / TCP(sport=5793, dport=80)
+    fwd_pkt2 = Ether() / IP(src='10.1.0.5', dst='224.1.0.1') / TCP(sport=5793, dport=80)
+
+    exp_pkt1 = (Ether(src=exp_src_mac) /
+                IP(src='10.1.0.3', dst='224.1.0.1', ttl=fwd_pkt1[IP].ttl-1) / TCP(sport=5793, dport=80))
+    exp_pkt2 = (Ether(src=exp_src_mac) /
+                IP(src='10.1.0.5',dst='224.1.0.1', ttl=fwd_pkt2[IP].ttl-1) / TCP(sport=5793, dport=80))
+    # The ports 1 nad 0 are exchanged to check that the rpf and ingress port are different , 
+    # thus dropping the packets
+    pack = send_pkts_and_capture(port_interface_mapping, [{'port': 1, 'packet': fwd_pkt1},
+                                                          {'port': 0, 'packet': fwd_pkt2}])
+    input_ports = {0, 1}
+    output = create_port_seq_list([], pack, input_ports)
+    return output
+
 
 def main():
     '''main block '''
@@ -386,6 +406,8 @@ def main():
     print output3
     output4 = test_multicast_sa_da(a, port_interface_mapping, exp_src_mac, exp_dst_mac)
     print output4
+    output5 = test_multicast_rpf(a, port_interface_mapping, exp_src_mac, exp_dst_mac)
+    print output5
 
     sw.kill()
 
