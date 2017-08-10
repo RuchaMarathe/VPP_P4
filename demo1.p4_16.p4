@@ -44,6 +44,9 @@ struct fwd_metadata_t {
     bit<14> mtu;
     bit<9> rid;
     bit<9> rpf_intf;
+    bit<1> is_bdir;
+    bit<4> bdir_index;
+    bit<1> setbit_dir;
 }
 
 struct metadata {
@@ -111,21 +114,26 @@ control ingress(inout headers hdr,
 
     // multicast group match action tables
 
-    action set_mc_group(bit<16> mcgp, bit<9> rpf) 
+    action set_mc_group(bit<16> mcgp, bit<9> rpf, bit<1> is_bdir, bit<4> bdir_index) 
     {
         standard_metadata.mcast_grp = mcgp;
-        // Reverse path forwading check for multiast case
+        // Reverse path forwading check for multicast case
         meta.fwd_metadata.rpf_intf = rpf;
+        meta.fwd_metadata.is_bdir = is_bdir;
+        meta.fwd_metadata.bdir_index = bdir_index;
     }
     action noAction(){
 
+    }
+    action set_bdir_map(bit<1> setbit_dir)
+    {
+        meta.fwd_metadata.setbit_dir = setbit_dir;
     }
     table mcgp_sa_da_lookup 
     {
         key = {
             hdr.ipv4.srcAddr: exact;
             hdr.ipv4.dstAddr: exact;
-
         }
         actions = {
             set_mc_group;
@@ -141,6 +149,19 @@ control ingress(inout headers hdr,
         }
         actions = {
             set_mc_group;
+            noAction;
+        }
+        default_action = noAction();
+    }
+
+    table mcgp_bidirect 
+    {
+        key = {
+            standard_metadata.ingress_port: exact;
+            meta.fwd_metadata.bdir_index: exact;
+        }
+        actions = {
+            set_bdir_map;
             noAction;
         }
         default_action = noAction();
@@ -189,7 +210,23 @@ control ingress(inout headers hdr,
             {
                 mcgp_da_lookup.apply();
             }
-            if(standard_metadata.ingress_port != meta.fwd_metadata.rpf_intf)
+            if(standard_metadata.ingress_port == meta.fwd_metadata.rpf_intf)
+            {
+                if(meta.fwd_metadata.is_bdir == 1)
+                {
+                    mcgp_bidirect.apply();
+                    if(meta.fwd_metadata.setbit_dir != 1)
+                    {
+                        my_drop();
+                        return;
+                    }
+                }
+                else
+                {
+                    return;
+                }
+            }
+            else
             {
                 my_drop();
                 return;
